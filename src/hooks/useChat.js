@@ -57,16 +57,47 @@ export function useChat() {
                     signal: controller.signal,
                 });
 
-                for await (const token of stream) {
+                const appendToLastMessage = useChatStore.getState().appendToLastMessage;
+                const appendReasoningToLastMessage = useChatStore.getState().appendReasoningToLastMessage;
+                const setDurationOnLastMessage = useChatStore.getState().setDurationOnLastMessage;
+
+                let reasoningStartTime = null;
+                let reasoningEndTime = null;
+
+                for await (const chunk of stream) {
                     if (controller.signal.aborted) break;
-                    appendToLastMessage(token);
+
+                    // Handle thinking content (extended thinking)
+                    if (chunk.thinking) {
+                        if (!reasoningStartTime) reasoningStartTime = Date.now();
+                        appendReasoningToLastMessage(chunk.thinking);
+                        reasoningEndTime = Date.now();
+                    }
+
+                    // Handle reasoning (fallback for other models)
+                    if (chunk.reasoning) {
+                        if (!reasoningStartTime) reasoningStartTime = Date.now();
+                        appendReasoningToLastMessage(chunk.reasoning);
+                        reasoningEndTime = Date.now();
+                    }
+
+                    if (chunk.text) {
+                        // If we were reasoning but just got the first text token, finalize reasoning duration
+                        if (reasoningStartTime && !reasoningEndTime) {
+                            reasoningEndTime = Date.now();
+                        }
+                        appendToLastMessage(chunk.text);
+                    }
+                }
+
+                if (reasoningStartTime && reasoningEndTime) {
+                    const durationInSeconds = ((reasoningEndTime - reasoningStartTime) / 1000).toFixed(1);
+                    setDurationOnLastMessage(durationInSeconds);
                 }
             } catch (err) {
                 if (err.name !== 'AbortError') {
-                    // If pure error, show it
-                    appendToLastMessage(
-                        '\n\n> ⚠️ **Error:** ' + (err.message || 'Failed to get response. Please try again.')
-                    );
+                    const setErrorOnLastMessage = useChatStore.getState().setErrorOnLastMessage;
+                    setErrorOnLastMessage(err.message || 'Failed to get response. Please try again.');
                 }
             } finally {
                 setStreaming(false);

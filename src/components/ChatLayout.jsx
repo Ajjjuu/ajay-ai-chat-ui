@@ -1,9 +1,6 @@
-/**
- * ChatLayout — 3-panel layout. Right panel only shows CodeViewer now.
- */
-import { memo, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { PanelLeftOpen, Sun, Moon } from 'lucide-react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { Menu, Moon, Sun, Brain, PanelRight } from 'lucide-react';
 import { Virtuoso } from 'react-virtuoso';
 import useChatStore from '../store/chatStore';
 import Sidebar from './Sidebar';
@@ -12,137 +9,151 @@ import MessageBubble from './MessageBubble';
 import InputBox from './InputBox';
 import WelcomeScreen from './WelcomeScreen';
 
-// ── Top Bar ─────────────────────────────────────────────────
-const TopBar = memo(function TopBar() {
-    const sidebarOpen = useChatStore((s) => s.sidebarOpen);
-    const toggleSidebar = useChatStore((s) => s.toggleSidebar);
-    const getActiveChat = useChatStore((s) => s.getActiveChat);
-    const theme = useChatStore((s) => s.theme);
-    const toggleTheme = useChatStore((s) => s.toggleTheme);
+const TopBar = memo(function TopBar({ isMobile }) {
+  const sidebarOpen = useChatStore((s) => s.sidebarOpen);
+  const toggleSidebar = useChatStore((s) => s.toggleSidebar);
+  const activeChat = useChatStore((s) => s.chats.find((c) => c.id === s.activeChatId) ?? s.chats[0]);
+  const theme = useChatStore((s) => s.theme);
+  const toggleTheme = useChatStore((s) => s.toggleTheme);
+  const showThinking = useChatStore((s) => s.showThinking);
+  const toggleShowThinking = useChatStore((s) => s.toggleShowThinking);
+  const rightPanelOpen = useChatStore((s) => s.rightPanelOpen);
+  const toggleRightPanel = useChatStore((s) => s.toggleRightPanel);
 
-    const activeChat = getActiveChat();
-
-    return (
-        <div
-            className="shrink-0 flex items-center justify-between px-4 py-2 transition-theme"
-            style={{
-                background: 'var(--topbar-bg)',
-                backdropFilter: 'blur(20px) saturate(1.3)',
-                WebkitBackdropFilter: 'blur(20px) saturate(1.3)',
-                borderBottom: '1px solid var(--glass-border)',
-            }}
+  return (
+    <header
+      className="transition-theme flex items-center justify-between px-4 py-3"
+      style={{ borderBottom: '1px solid var(--divider)', background: 'var(--surface-frost)' }}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        {(!sidebarOpen || isMobile) && (
+          <button className="btn btn-ghost p-2" onClick={toggleSidebar} aria-label="Toggle sidebar">
+            <Menu size={20} strokeWidth={1.5} />
+          </button>
+        )}
+        <div className="min-w-0">
+          <h3 className="truncate">{activeChat?.title || 'New Chat'}</h3>
+          <p className="text-small truncate" style={{ color: 'var(--text-secondary)' }}>
+            {(activeChat?.messages?.length || 0)} messages
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          className="btn btn-ghost p-2"
+          onClick={toggleShowThinking}
+          title={showThinking ? 'Hide reasoning' : 'Show reasoning'}
         >
-            <div className="flex items-center gap-3">
-                {!sidebarOpen && (
-                    <button onClick={toggleSidebar}
-                        className="p-1.5 rounded-sm transition-all duration-200 hover:bg-[hsl(var(--bg-glass-hover)/0.5)]"
-                        style={{ color: 'var(--text-2)' }}
-                        title="Open sidebar (Ctrl+B)">
-                        <PanelLeftOpen size={15} />
-                    </button>
-                )}
-                <div className="min-w-0">
-                    <h2 className="text-[12px] font-semibold truncate" style={{ color: 'var(--text-1)' }}>
-                        {activeChat?.title || 'New Chat'}
-                    </h2>
-                    <p className="text-[9px]" style={{ color: 'var(--text-2)' }}>
-                        {activeChat?.messages?.length || 0} messages
-                    </p>
-                </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-                {!sidebarOpen && (
-                    <button onClick={toggleTheme}
-                        className="p-1.5 rounded-sm transition-all duration-200 hover:bg-[hsl(var(--bg-glass-hover)/0.5)]"
-                        style={{ color: 'var(--text-2)' }}
-                        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-                        {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
-                    </button>
-                )}
-            </div>
-        </div>
-    );
+          <Brain size={20} strokeWidth={1.5} color={showThinking ? 'var(--accent)' : 'currentColor'} />
+        </button>
+        <button className="btn btn-ghost p-2" onClick={toggleRightPanel} title="Toggle code viewer">
+          <PanelRight size={20} strokeWidth={1.5} color={rightPanelOpen ? 'var(--accent)' : 'currentColor'} />
+        </button>
+        <button className="btn btn-ghost p-2" onClick={toggleTheme} title="Toggle theme">
+          {theme === 'dark' ? (
+            <Sun size={20} strokeWidth={1.5} />
+          ) : (
+            <Moon size={20} strokeWidth={1.5} />
+          )}
+        </button>
+      </div>
+    </header>
+  );
 });
 
-// ── Message List ────────────────────────────────────────────
 const MessageList = memo(function MessageList() {
-    const getActiveChat = useChatStore((s) => s.getActiveChat);
-    const isStreaming = useChatStore((s) => s.isStreaming);
-    const virtuosoRef = useRef(null);
+  const messages = useChatStore((s) => (s.chats.find((c) => c.id === s.activeChatId)?.messages ?? []));
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const virtuosoRef = useRef(null);
 
-    const chat = getActiveChat();
-    const messages = chat?.messages || [];
+  useEffect(() => {
+    if (!isStreaming || messages.length === 0 || !virtuosoRef.current) return;
+    virtuosoRef.current.scrollToIndex({
+      index: messages.length - 1,
+      behavior: 'smooth',
+      align: 'end',
+    });
+  }, [isStreaming, messages.length, messages[messages.length - 1]?.content]);
 
-    useEffect(() => {
-        if (isStreaming && virtuosoRef.current) {
-            virtuosoRef.current.scrollToIndex({
-                index: messages.length - 1,
-                behavior: 'smooth',
-                align: 'end',
-            });
-        }
-    }, [isStreaming, messages.length, messages[messages.length - 1]?.content]);
+  if (!messages.length) return <WelcomeScreen />;
 
-    if (messages.length === 0) return <WelcomeScreen />;
-
-    return (
-        <div className="flex-1 relative">
-            <Virtuoso
-                ref={virtuosoRef}
-                data={messages}
-                totalCount={messages.length}
-                followOutput="smooth"
-                className="h-full"
-                itemContent={(index, message) => (
-                    <div className="px-4 md:px-8 lg:px-20 py-2">
-                        <div className="max-w-4xl mx-auto">
-                            <MessageBubble
-                                message={message}
-                                isStreaming={isStreaming && index === messages.length - 1}
-                            />
-                        </div>
-                    </div>
-                )}
-                components={{
-                    Header: () => <div className="h-3" />,
-                    Footer: () => <div className="h-3" />,
-                }}
-            />
+  return (
+    <Virtuoso
+      ref={virtuosoRef}
+      data={messages}
+      followOutput="smooth"
+      className="h-full w-full"
+      itemContent={(index, message) => (
+        <div className="px-3 py-2 md:px-6 lg:px-8">
+          <MessageBubble message={message} isStreaming={isStreaming && index === messages.length - 1} />
         </div>
-    );
+      )}
+      components={{
+        Header: () => <div className="h-2" />,
+        Footer: () => <div className="h-2" />,
+      }}
+    />
+  );
 });
 
-// ── Right Panel (Code Viewer only) ──────────────────────────
-const RightPanel = memo(function RightPanel() {
-    const rightPanelOpen = useChatStore((s) => s.rightPanelOpen);
-    const codeViewerContent = useChatStore((s) => s.codeViewerContent);
-
-    if (!rightPanelOpen || !codeViewerContent) return null;
-
-    return <CodeViewer />;
-});
-
-// ── Main Layout ─────────────────────────────────────────────
 const ChatLayout = memo(function ChatLayout() {
-    return (
-        <div className="relative flex h-full w-full overflow-hidden transition-theme"
-            style={{ background: 'hsl(var(--bg-body))', zIndex: 1 }}>
-            <AnimatePresence mode="wait">
-                <Sidebar />
-            </AnimatePresence>
+  const sidebarOpen = useChatStore((s) => s.sidebarOpen);
+  const toggleSidebar = useChatStore((s) => s.toggleSidebar);
+  const rightPanelOpen = useChatStore((s) => s.rightPanelOpen);
+  const codeViewerContent = useChatStore((s) => s.codeViewerContent);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
 
-            <div className="flex-1 flex flex-col min-w-0">
-                <TopBar />
-                <MessageList />
-                <InputBox />
-            </div>
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
-            <AnimatePresence mode="wait">
-                <RightPanel />
-            </AnimatePresence>
-        </div>
-    );
+  const showSidebarOverlay = sidebarOpen && isMobile;
+  const showCodeViewer = rightPanelOpen && codeViewerContent;
+  const rightPanelClass = useMemo(
+    () =>
+      isMobile
+        ? 'mobile-sheet transition-theme max-h-[58vh] overflow-hidden border'
+        : 'w-[34%] min-w-[320px] max-w-[520px] border-l transition-theme',
+    [isMobile]
+  );
+
+  return (
+    <div className="app-shell transition-theme">
+      <AnimatePresence>
+        {sidebarOpen && <Sidebar isMobile={isMobile} />}
+      </AnimatePresence>
+
+      {showSidebarOverlay && (
+        <button
+          className="fixed inset-0 z-30 bg-black/35"
+          aria-label="Close sidebar overlay"
+          onClick={toggleSidebar}
+        />
+      )}
+
+      <main className="chat-main transition-theme" style={{ background: 'var(--bg-primary)' }}>
+        <TopBar isMobile={isMobile} />
+
+        <section className="flex-1 min-h-0 overflow-hidden">
+          <MessageList />
+        </section>
+
+        <footer className="transition-theme px-3 py-3 md:px-6 md:py-4" style={{ borderTop: '1px solid var(--divider)' }}>
+          <InputBox />
+        </footer>
+      </main>
+
+      <AnimatePresence>
+        {showCodeViewer && (
+          <aside className={rightPanelClass} style={!isMobile ? { borderColor: 'var(--divider)' } : { borderColor: 'var(--divider)', background: 'var(--bg-secondary)' }}>
+            <CodeViewer />
+          </aside>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 });
 
 export default ChatLayout;

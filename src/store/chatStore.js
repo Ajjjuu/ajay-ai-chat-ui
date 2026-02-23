@@ -77,6 +77,9 @@ const useChatStore = create((set, get) => ({
                 id: uuidv4(),
                 role,
                 content,
+                reasoning: '',
+                duration: null,
+                error: null,
                 files,
                 timestamp: Date.now(),
             };
@@ -110,6 +113,22 @@ const useChatStore = create((set, get) => ({
             }),
         })),
 
+    appendReasoningToLastMessage: (token) =>
+        set((s) => ({
+            chats: s.chats.map((c) => {
+                if (c.id !== s.activeChatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role === 'assistant') {
+                    msgs[msgs.length - 1] = {
+                        ...last,
+                        reasoning: (last.reasoning || '') + token
+                    };
+                }
+                return { ...c, messages: msgs, updatedAt: Date.now() };
+            }),
+        })),
+
     replaceLastMessage: (content) =>
         set((s) => ({
             chats: s.chats.map((c) => {
@@ -118,6 +137,32 @@ const useChatStore = create((set, get) => ({
                 const last = msgs[msgs.length - 1];
                 if (last?.role === 'assistant') {
                     msgs[msgs.length - 1] = { ...last, content };
+                }
+                return { ...c, messages: msgs, updatedAt: Date.now() };
+            }),
+        })),
+
+    setErrorOnLastMessage: (error) =>
+        set((s) => ({
+            chats: s.chats.map((c) => {
+                if (c.id !== s.activeChatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role === 'assistant') {
+                    msgs[msgs.length - 1] = { ...last, error };
+                }
+                return { ...c, messages: msgs, updatedAt: Date.now() };
+            }),
+        })),
+
+    setDurationOnLastMessage: (duration) =>
+        set((s) => ({
+            chats: s.chats.map((c) => {
+                if (c.id !== s.activeChatId) return c;
+                const msgs = [...c.messages];
+                const last = msgs[msgs.length - 1];
+                if (last?.role === 'assistant') {
+                    msgs[msgs.length - 1] = { ...last, duration };
                 }
                 return { ...c, messages: msgs, updatedAt: Date.now() };
             }),
@@ -154,6 +199,9 @@ const useChatStore = create((set, get) => ({
 
     searchQuery: '',
     setSearchQuery: (q) => set({ searchQuery: q }),
+
+    showThinking: true,
+    toggleShowThinking: () => set((s) => ({ showThinking: !s.showThinking })),
 }));
 
 export default useChatStore;
